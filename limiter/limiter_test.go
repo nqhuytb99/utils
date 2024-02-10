@@ -22,10 +22,9 @@ func BenchmarkLimiter(b *testing.B) {
 
 func TestLimiter(t *testing.T) {
 	l := NewLimiter(10*time.Second, reqPerSec*concurrentUser)
-	var success, fail = 0, 0
+	success, fail := 0, 0
 
 	for j := 0; j < 3*reqPerSec*concurrentUser; j++ {
-
 		if l.Inc() {
 			success++
 		} else {

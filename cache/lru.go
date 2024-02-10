@@ -13,12 +13,10 @@ func (c *Cache[T]) evictLRevictLeastRecentlyUsedItems() {
 				lruEntry = entry
 				lruKey = key
 			}
-
 		}
 
 		if lruEntry != nil {
 			c.size -= lruEntry.size
-
 			delete(c.items, lruKey)
 		}
 	}
