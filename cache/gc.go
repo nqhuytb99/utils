@@ -2,8 +2,8 @@ package cache
 
 import "time"
 
-// StartGC starts a goroutine that periodically calls the collectGarbage method on the cache object.
-func (c *Cache[T]) StartGC(interval time.Duration) {
+// startGC starts a goroutine that periodically calls the collectGarbage method on the cache object.
+func (c *Cache[T]) startGC(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	go func() {
 		for range ticker.C {

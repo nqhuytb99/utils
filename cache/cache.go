@@ -70,7 +70,7 @@ func New[T any](options ...CacheOption) *Cache[T] {
 		},
 		Options: o,
 	}
-	c.StartGC(defaultGCInverval)
+	c.startGC(defaultGCInverval)
 	return c
 }
 
