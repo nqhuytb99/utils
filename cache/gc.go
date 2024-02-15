@@ -20,7 +20,7 @@ func (c *Cache[T]) collectGarbage() {
 	now := time.Now()
 	for key, entry := range c.items {
 		if entry.exp.Before(now) {
-			c.Delete(key)
+			c.delete(key)
 		}
 	}
 }

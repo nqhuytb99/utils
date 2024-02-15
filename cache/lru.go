@@ -7,7 +7,7 @@ func (c *Cache[T]) evictLRevictLeastRecentlyUsedItems() {
 
 	for c.size > c.capacity {
 		var lruEntry *CacheEntry[T]
-		var lruKey string
+		var lruKey uint64
 		for key, entry := range c.items {
 			if lruEntry == nil || entry.lastAccess.Before(lruEntry.lastAccess) {
 				lruEntry = entry

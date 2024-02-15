@@ -2,6 +2,7 @@
 package cache
 
 import (
+	"hash/fnv"
 	"runtime"
 	"sync"
 	"time"
@@ -37,7 +38,7 @@ type CacheEntry[T any] struct {
 
 // Cache implements a type-safe in-memory cache
 type Cache[T any] struct {
-	items  map[string]*CacheEntry[T]
+	items  map[uint64]*CacheEntry[T]
 	locker *sync.RWMutex
 
 	size uint64
@@ -61,7 +62,7 @@ func New[T any](options ...CacheOption) *Cache[T] {
 		option.apply(&o)
 	}
 	c := &Cache[T]{
-		items:   make(map[string]*CacheEntry[T]),
+		items:   make(map[uint64]*CacheEntry[T]),
 		locker:  new(sync.RWMutex),
 		size:    cacheMapSize,
 		Options: o,
@@ -74,9 +75,10 @@ func New[T any](options ...CacheOption) *Cache[T] {
 // If the key is not found or if the entry has expired, it returns the zero value of type T and false.
 // Otherwise, it returns the value and true.
 func (c *Cache[T]) Get(key string) (T, bool) {
-	entry, ok := c.items[key]
+	hashKey := keyFromString(key)
+	entry, ok := c.items[hashKey]
 	if !ok || entry.exp.Before(time.Now()) {
-		delete(c.items, key)
+		delete(c.items, hashKey)
 		return zero[T](), false
 	}
 
@@ -93,7 +95,7 @@ func (c *Cache[T]) Set(key string, data T, exp time.Duration) {
 		c.evictLRevictLeastRecentlyUsedItems()
 	}
 
-	c.set(key, &CacheEntry[T]{
+	c.set(keyFromString(key), &CacheEntry[T]{
 		data:       data,
 		exp:        time.Now().Add(exp),
 		size:       newSize,
@@ -101,7 +103,7 @@ func (c *Cache[T]) Set(key string, data T, exp time.Duration) {
 	})
 }
 
-func (c *Cache[T]) set(key string, entry *CacheEntry[T]) {
+func (c *Cache[T]) set(key uint64, entry *CacheEntry[T]) {
 	c.locker.Lock()
 	defer c.locker.Unlock()
 
@@ -121,7 +123,14 @@ func (c *Cache[T]) Delete(key string) {
 	c.locker.Lock()
 	defer c.locker.Unlock()
 
-	delete(c.items, key)
+	delete(c.items, keyFromString(key))
+}
+
+func (c *Cache[T]) delete(hashKey uint64) {
+	c.locker.Lock()
+	defer c.locker.Unlock()
+
+	delete(c.items, hashKey)
 }
 
 // Prune removes all cache's items
@@ -129,7 +138,7 @@ func (c *Cache[T]) Prune(key string) {
 	c.locker.Lock()
 	defer c.locker.Unlock()
 
-	c.items = make(map[string]*CacheEntry[T])
+	c.items = make(map[uint64]*CacheEntry[T])
 	c.size = cacheMapSize
 }
 
@@ -141,4 +150,10 @@ func zero[T any]() T {
 
 func (c *Cache[T]) Size() uint64 {
 	return c.size
+}
+
+func keyFromString(key string) (hashKey uint64) {
+	h := fnv.New64a()
+	h.Write([]byte(key))
+	return h.Sum64()
 }
