@@ -41,7 +41,8 @@ type Cache[T any] struct {
 	items  map[uint64]*CacheEntry[T]
 	locker *sync.RWMutex
 
-	size uint64
+	lruList *lruQueue
+	size    uint64
 	Options
 }
 
@@ -62,9 +63,12 @@ func New[T any](options ...CacheOption) *Cache[T] {
 		option.apply(&o)
 	}
 	c := &Cache[T]{
-		items:   make(map[uint64]*CacheEntry[T]),
-		locker:  new(sync.RWMutex),
-		size:    cacheMapSize,
+		items:  make(map[uint64]*CacheEntry[T]),
+		locker: new(sync.RWMutex),
+		size:   cacheMapSize,
+		lruList: &lruQueue{
+			mu: new(sync.Mutex),
+		},
 		Options: o,
 	}
 	c.StartGC(defaultGCInverval)
@@ -75,6 +79,8 @@ func New[T any](options ...CacheOption) *Cache[T] {
 // If the key is not found or if the entry has expired, it returns the zero value of type T and false.
 // Otherwise, it returns the value and true.
 func (c *Cache[T]) Get(key string) (T, bool) {
+	c.locker.Lock()
+	defer c.locker.Unlock()
 	hashKey := keyFromString(key)
 	entry, ok := c.items[hashKey]
 	if !ok || entry.exp.Before(time.Now()) {
@@ -91,8 +97,8 @@ func (c *Cache[T]) Set(key string, data T, exp time.Duration) {
 	newSize := entrySize[T](key, data)
 
 	c.incSize(newSize)
-	if c.size > c.capacity {
-		c.evictLRevictLeastRecentlyUsedItems()
+	for c.size > c.capacity {
+		c.evictLRU()
 	}
 
 	c.set(keyFromString(key), &CacheEntry[T]{
