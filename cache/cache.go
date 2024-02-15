@@ -30,10 +30,9 @@ func init() {
 
 // CacheEntry holds the cached data and its expiration time
 type CacheEntry[T any] struct {
-	data       T
-	exp        time.Time
-	size       uint64
-	lastAccess time.Time
+	data T
+	exp  time.Time
+	size uint64
 }
 
 // Cache implements a type-safe in-memory cache
@@ -88,7 +87,7 @@ func (c *Cache[T]) Get(key string) (T, bool) {
 		return zero[T](), false
 	}
 
-	entry.lastAccess = time.Now()
+	c.lruList.moveToFront(key)
 	return entry.data, true
 }
 
@@ -102,10 +101,9 @@ func (c *Cache[T]) Set(key string, data T, exp time.Duration) {
 	}
 
 	c.set(keyFromString(key), &CacheEntry[T]{
-		data:       data,
-		exp:        time.Now().Add(exp),
-		size:       newSize,
-		lastAccess: time.Now(),
+		data: data,
+		exp:  time.Now().Add(exp),
+		size: newSize,
 	})
 }
 
