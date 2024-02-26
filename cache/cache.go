@@ -3,6 +3,7 @@ package cache
 
 import (
 	"hash/fnv"
+	"maps"
 	"runtime"
 	"sync"
 	"time"
@@ -105,6 +106,38 @@ func (c *Cache[T]) Set(key string, data T, exp time.Duration) {
 		exp:  time.Now().Add(exp),
 		size: newSize,
 	})
+}
+
+// Filter applies a filter function to the cache entries and returns a slice of filtered values.
+func (c *Cache[T]) Filter(fn func(T) bool) []T {
+	snapshot := c.snapshot()
+	var result []T
+	for _, entry := range snapshot {
+		if fn(entry.data) {
+			result = append(result, entry.data)
+		}
+	}
+	return result
+}
+
+// DeleteMatchingEntries deletes cache entries that match the given filter function.
+func (c *Cache[T]) DeleteMatchingEntries(fn func(T) bool) {
+	c.locker.Lock()
+	defer c.locker.Unlock()
+
+	for key, entry := range c.items {
+		if fn(entry.data) {
+			c.delete(key)
+		}
+	}
+}
+
+// snapshot creates a snapshot of the cache items.
+func (c *Cache[T]) snapshot() map[uint64]*CacheEntry[T] {
+	c.locker.Lock()
+	defer c.locker.Unlock()
+
+	return maps.Clone(c.items)
 }
 
 func (c *Cache[T]) set(key uint64, entry *CacheEntry[T]) {
