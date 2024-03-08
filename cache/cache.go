@@ -127,7 +127,7 @@ func (c *Cache[T]) DeleteMatchingEntries(fn func(T) bool) {
 
 	for key, entry := range c.items {
 		if fn(entry.data) {
-			c.delete(key)
+			delete(c.items, key)
 		}
 	}
 }
