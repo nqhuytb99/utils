@@ -13,7 +13,7 @@ type Filter struct {
 	xorfilter *xorfilter.BinaryFuse8
 }
 
-func hashText(text string) uint64 {
+func HashText(text string) uint64 {
 	hash := uint64(0)
 	for _, char := range text {
 		// Convert character to ASCII code and fold 8 bits into 1
@@ -29,17 +29,25 @@ func NewFilter() *Filter {
 	return &Filter{}
 }
 
+// BuildFilter creates a new xorfilter.BinaryFuse8 from a list of keys.
+//
+// Caution: This method can use a large amount of RAM. Consider using BuildFilterFromHashes instead.
 func (f *Filter) BuildFilter(keys []string) {
 	hashes := make([]uint64, len(keys))
 	for i, key := range keys {
-		hashes[i] = hashText(key)
+		hashes[i] = HashText(key)
 	}
 	filter, _ := xorfilter.PopulateBinaryFuse8(hashes)
 	f.xorfilter = filter
 }
 
+func (f *Filter) BuildFilterFromHashes(hashes []uint64) {
+	filter, _ := xorfilter.PopulateBinaryFuse8(hashes)
+	f.xorfilter = filter
+}
+
 func (f *Filter) Contains(key string) bool {
-	return f.xorfilter.Contains(hashText(key))
+	return f.xorfilter.Contains(HashText(key))
 }
 
 func (f *Filter) SaveToFile(fp string) error {
@@ -52,7 +60,7 @@ func (f *Filter) SaveToFile(fp string) error {
 	}
 
 	// Write the byte buffer to a file
-	err = os.WriteFile(fp, buffer.Bytes(), 0644)
+	err = os.WriteFile(fp, buffer.Bytes(), 0o644)
 	if err != nil {
 		return fmt.Errorf("writing to file: %s", err.Error())
 	}
@@ -62,7 +70,7 @@ func (f *Filter) SaveToFile(fp string) error {
 
 func (f *Filter) LoadFromFile(fp string) error {
 	// Read the file into a byte buffer
-	file, err := os.OpenFile(fp, os.O_RDONLY, 0644)
+	file, err := os.OpenFile(fp, os.O_RDONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("opening file: %s", err.Error())
 	}
