@@ -3,8 +3,6 @@ package queue
 import (
 	"sync"
 	"time"
-
-	"github.com/DmitriyVTitov/size"
 )
 
 type Queue[T any] struct {
@@ -42,11 +40,7 @@ func NewQueue[T any](options ...QueueOption) Queue[T] {
 }
 
 func (q *Queue[T]) Enqueue(value T) {
-	q.locker.Lock()
-	defer q.locker.Unlock()
-
-	q.data = append(q.data, value)
-	q.mem += size.Of(value)
+	q.enqueue(value)
 
 	if q.options.sizeLimit > 0 && len(q.data) >= q.options.sizeLimit {
 		q.pushSignal <- true
@@ -54,6 +48,13 @@ func (q *Queue[T]) Enqueue(value T) {
 	if q.options.memoryLimit > 0 && q.mem >= q.options.memoryLimit {
 		q.pushSignal <- true
 	}
+}
+
+func (q *Queue[T]) enqueue(value T) {
+	q.locker.Lock()
+	defer q.locker.Unlock()
+
+	q.data = append(q.data, value)
 }
 
 func (q *Queue[T]) EnqueueWithChannel(input chan T) {
@@ -81,11 +82,13 @@ func (q *Queue[T]) Receive() chan []T {
 
 	go func() {
 		defer close(out)
-		for {
-			switch {
-			case <-q.pushSignal:
-				out <- q.dequeueAll()
+		for range q.pushSignal {
+			values := q.dequeueAll()
+			if len(values) == 0 {
+				continue
 			}
+
+			out <- values
 		}
 	}()
 
