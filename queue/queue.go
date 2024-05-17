@@ -56,6 +56,14 @@ func (q *Queue[T]) Enqueue(value T) {
 	}
 }
 
+func (q *Queue[T]) EnqueueWithChannel(input chan T) {
+	go func() {
+		for value := range input {
+			q.Enqueue(value)
+		}
+	}()
+}
+
 func (q *Queue[T]) dequeueAll() []T {
 	q.locker.Lock()
 	defer q.locker.Unlock()
