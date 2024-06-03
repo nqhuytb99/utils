@@ -14,68 +14,68 @@ package limiter
 // as nil Ring pointers. The zero value for a Ring is a one-element
 // ring with a nil Value.
 type Ring[T comparable] struct {
-	next, prev *Ring[T]
-	Value      T // for use by client; untouched by this library
+	n, p  *Ring[T]
+	Value T // for use by client; untouched by this library
 }
 
 func (r *Ring[T]) init() *Ring[T] {
-	r.next = r
-	r.prev = r
+	r.n = r
+	r.p = r
 	return r
 }
 
-// Next returns the next ring element. r must not be empty.
-func (r *Ring[T]) Next() *Ring[T] {
-	if r.next == nil {
+// next returns the next ring element. r must not be empty.
+func (r *Ring[T]) next() *Ring[T] {
+	if r.n == nil {
 		return r.init()
 	}
-	return r.next
+	return r.n
 }
 
-// Prev returns the previous ring element. r must not be empty.
-func (r *Ring[T]) Prev() *Ring[T] {
-	if r.next == nil {
+// prev returns the previous ring element. r must not be empty.
+func (r *Ring[T]) prev() *Ring[T] {
+	if r.n == nil {
 		return r.init()
 	}
-	return r.prev
+	return r.p
 }
 
-// Move moves n % r.Len() elements backward (n < 0) or forward (n >= 0)
+// move moves n % r.Len() elements backward (n < 0) or forward (n >= 0)
 // in the ring and returns that ring element. r must not be empty.
-func (r *Ring[T]) Move(n int) *Ring[T] {
-	if r.next == nil {
+func (r *Ring[T]) move(n int) *Ring[T] {
+	if r.n == nil {
 		return r.init()
 	}
 	switch {
 	case n < 0:
 		for ; n < 0; n++ {
-			r = r.prev
+			r = r.p
 		}
 	case n > 0:
 		for ; n > 0; n-- {
-			r = r.next
+			r = r.n
 		}
 	}
 	return r
 }
 
-// New creates a ring of n elements.
-func New[T comparable](n int) *Ring[T] {
+// newRing creates a ring of n elements.
+func newRing[T comparable](n int) *Ring[T] {
 	if n <= 0 {
 		return nil
 	}
 	r := new(Ring[T])
 	p := r
 	for i := 1; i < n; i++ {
-		p.next = &Ring[T]{prev: p}
-		p = p.next
+		p.n = &Ring[T]{p: p}
+		p = p.n
 	}
-	p.next = r
-	r.prev = p
+	p.n = r
+	r.p = p
 	return r
 }
 
-// Link connects ring r with ring s such that r.Next()
+// link connects ring r with ring s such that r.Next()
 // becomes s and returns the original value for r.Next().
 // r must not be empty.
 //
@@ -90,49 +90,49 @@ func New[T comparable](n int) *Ring[T] {
 // them creates a single ring with the elements of s inserted
 // after r. The result points to the element following the
 // last element of s after insertion.
-func (r *Ring[T]) Link(s *Ring[T]) *Ring[T] {
-	n := r.Next()
+func (r *Ring[T]) link(s *Ring[T]) *Ring[T] {
+	n := r.next()
 	if s != nil {
-		p := s.Prev()
+		p := s.prev()
 		// Note: Cannot use multiple assignment because
 		// evaluation order of LHS is not specified.
-		r.next = s
-		s.prev = r
-		n.prev = p
-		p.next = n
+		r.n = s
+		s.p = r
+		n.p = p
+		p.n = n
 	}
 	return n
 }
 
-// Unlink removes n % r.Len() elements from the ring r, starting
+// unlink removes n % r.Len() elements from the ring r, starting
 // at r.Next(). If n % r.Len() == 0, r remains unchanged.
 // The result is the removed subring. r must not be empty.
-func (r *Ring[T]) Unlink(n int) *Ring[T] {
+func (r *Ring[T]) unlink(n int) *Ring[T] {
 	if n <= 0 {
 		return nil
 	}
-	return r.Link(r.Move(n + 1))
+	return r.link(r.move(n + 1))
 }
 
-// Len computes the number of elements in ring r.
+// len computes the number of elements in ring r.
 // It executes in time proportional to the number of elements.
-func (r *Ring[T]) Len() int {
+func (r *Ring[T]) len() int {
 	n := 0
 	if r != nil {
 		n = 1
-		for p := r.Next(); p != r; p = p.next {
+		for p := r.next(); p != r; p = p.n {
 			n++
 		}
 	}
 	return n
 }
 
-// Do calls function f on each element of the ring, in forward order.
-// The behavior of Do is undefined if f changes *r.
-func (r *Ring[T]) Do(f func(any)) {
+// do calls function f on each element of the ring, in forward order.
+// The behavior of do is undefined if f changes *r.
+func (r *Ring[T]) do(f func(any)) {
 	if r != nil {
 		f(r.Value)
-		for p := r.Next(); p != r; p = p.next {
+		for p := r.next(); p != r; p = p.n {
 			f(p.Value)
 		}
 	}
