@@ -15,14 +15,13 @@ type Limiter struct {
 	mu     *sync.RWMutex
 }
 
-func NewLimiter(windows time.Duration, threshold int) Limiter {
-	l := Limiter{
+func NewLimiter(windows time.Duration, threshold int) *Limiter {
+	return &Limiter{
 		windows:   windows,
 		threshold: threshold,
-		buffer:    New[time.Time](threshold),
+		buffer:    newRing[time.Time](threshold),
 		mu:        new(sync.RWMutex),
 	}
-	return l
 }
 
 // AvailableAt calculates and returns the time at which the next request can be made.
@@ -42,11 +41,11 @@ func (l *Limiter) TillAvailable() time.Duration {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	if l.buffer.Next().Value.Add(l.windows).Before(time.Now()) {
+	if l.buffer.next().Value.Add(l.windows).Before(time.Now()) {
 		return 0
 	}
 
-	return time.Until(l.buffer.Next().Value.Add(l.windows))
+	return time.Until(l.buffer.next().Value.Add(l.windows))
 }
 
 // Inc increments the counter and returns true if the request is allowed, or false if the request is denied.
@@ -54,12 +53,12 @@ func (l *Limiter) Inc() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if l.buffer.Next().Value.Add(l.windows).After(time.Now()) {
+	if l.buffer.next().Value.Add(l.windows).After(time.Now()) {
 		return false
 	}
 
 	now := time.Now()
-	l.buffer = l.buffer.Next()
+	l.buffer = l.buffer.next()
 	l.buffer.Value = now
 
 	return true
