@@ -27,15 +27,6 @@ func NewQueue[T any](options ...QueueOption) Queue[T] {
 		mem:        0,
 	}
 
-	go func() {
-		ticker := time.NewTicker(q.options.tickerInterval)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			q.pushSignal <- true
-		}
-	}()
-
 	return q
 }
 
@@ -82,7 +73,12 @@ func (q *Queue[T]) Receive() chan []T {
 
 	go func() {
 		defer close(out)
-		for range q.pushSignal {
+		for {
+			select {
+			case <-q.pushSignal:
+			case <-time.After(q.options.tickerInterval):
+			}
+
 			values := q.dequeueAll()
 			if len(values) == 0 {
 				continue
