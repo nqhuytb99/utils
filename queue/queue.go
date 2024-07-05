@@ -34,7 +34,7 @@ func NewQueue[T any](ctx context.Context, options ...QueueOption) Queue[T] {
 		out:        make(chan []T),
 	}
 
-	go q.watchForSignal()
+	q.watchForSignal()
 	return q
 }
 
