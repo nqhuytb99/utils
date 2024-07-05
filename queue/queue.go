@@ -1,11 +1,15 @@
 package queue
 
 import (
+	"context"
 	"sync"
 	"time"
+
+	"github.com/DmitriyVTitov/size"
 )
 
 type Queue[T any] struct {
+	ctx        context.Context
 	data       []T
 	locker     *sync.RWMutex
 	pushSignal chan bool
@@ -13,13 +17,14 @@ type Queue[T any] struct {
 	mem        int
 }
 
-func NewQueue[T any](options ...QueueOption) Queue[T] {
+func NewQueue[T any](ctx context.Context, options ...QueueOption) Queue[T] {
 	opts := defaultOptions()
 	for _, option := range options {
 		option.apply(&opts)
 	}
 
 	q := Queue[T]{
+		ctx:        ctx,
 		data:       []T{},
 		options:    opts,
 		pushSignal: make(chan bool),
@@ -39,22 +44,29 @@ func NewQueue[T any](options ...QueueOption) Queue[T] {
 	return q
 }
 
-func (q *Queue[T]) Enqueue(value T) {
-	q.enqueue(value)
-
-	if q.options.sizeLimit > 0 && len(q.data) >= q.options.sizeLimit {
-		q.pushSignal <- true
+func (q *Queue[T]) Enqueue(value T) error {
+	select {
+	case <-q.ctx.Done():
+		return q.ctx.Err()
+	default:
+		q.enqueue(value)
 	}
-	if q.options.memoryLimit > 0 && q.mem >= q.options.memoryLimit {
-		q.pushSignal <- true
-	}
+	return nil
 }
 
 func (q *Queue[T]) enqueue(value T) {
+	if q.options.sizeLimit > 0 && len(q.data) > q.options.sizeLimit {
+		q.pushSignal <- true
+	}
+
+	if q.options.memoryLimit > 0 && q.mem+size.Of(value) > q.options.memoryLimit {
+		q.pushSignal <- true
+	}
+
 	q.locker.Lock()
 	defer q.locker.Unlock()
-
 	q.data = append(q.data, value)
+	q.mem += size.Of(value)
 }
 
 func (q *Queue[T]) EnqueueWithChannel(input chan T) {
@@ -62,7 +74,13 @@ func (q *Queue[T]) EnqueueWithChannel(input chan T) {
 		for value := range input {
 			q.Enqueue(value)
 		}
+
+		close(q.pushSignal)
 	}()
+}
+
+func (q *Queue[T]) Close() {
+	close(q.pushSignal)
 }
 
 func (q *Queue[T]) dequeueAll() []T {
@@ -82,13 +100,24 @@ func (q *Queue[T]) Receive() chan []T {
 
 	go func() {
 		defer close(out)
-		for range q.pushSignal {
-			values := q.dequeueAll()
-			if len(values) == 0 {
-				continue
-			}
+		for {
+			select {
+			case <-q.ctx.Done():
+				values := q.dequeueAll()
+				if len(values) == 0 {
+					continue
+				}
 
-			out <- values
+				out <- values
+				return
+			case <-q.pushSignal:
+				values := q.dequeueAll()
+				if len(values) == 0 {
+					continue
+				}
+
+				out <- values
+			}
 		}
 	}()
 
