@@ -32,7 +32,16 @@ func TestCombination(t *testing.T) {
 		log.Println("Done sending", count)
 		cancel()
 	}()
-	q.EnqueueWithChannel(input)
+
+	go func() {
+		for value := range input {
+			err := q.Enqueue(value)
+			if err != nil {
+				t.Fail()
+			}
+		}
+	}()
+
 	var count int
 	for data := range q.Receive() {
 		count += len(data)

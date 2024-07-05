@@ -15,6 +15,7 @@ type Queue[T any] struct {
 	pushSignal chan bool
 	options    QueueOptions
 	mem        int
+	out        chan []T
 }
 
 func NewQueue[T any](ctx context.Context, options ...QueueOption) Queue[T] {
@@ -30,17 +31,10 @@ func NewQueue[T any](ctx context.Context, options ...QueueOption) Queue[T] {
 		pushSignal: make(chan bool),
 		locker:     new(sync.RWMutex),
 		mem:        0,
+		out:        make(chan []T),
 	}
 
-	go func() {
-		ticker := time.NewTicker(q.options.tickerInterval)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			q.pushSignal <- true
-		}
-	}()
-
+	go q.watchForSignal()
 	return q
 }
 
@@ -69,57 +63,41 @@ func (q *Queue[T]) enqueue(value T) {
 	q.mem += size.Of(value)
 }
 
-func (q *Queue[T]) EnqueueWithChannel(input chan T) {
-	go func() {
-		for value := range input {
-			q.Enqueue(value)
-		}
-
-		close(q.pushSignal)
-	}()
-}
-
 func (q *Queue[T]) Close() {
 	close(q.pushSignal)
 }
 
-func (q *Queue[T]) dequeueAll() []T {
+func (q *Queue[T]) dequeueAll() {
 	q.locker.Lock()
 	defer q.locker.Unlock()
 
-	values := q.data
+	if len(q.data) == 0 {
+		return
+	}
+
+	q.out <- q.data
 
 	q.data = []T{}
 	q.mem = 0
-
-	return values
 }
 
-func (q *Queue[T]) Receive() chan []T {
-	out := make(chan []T)
-
+func (q *Queue[T]) watchForSignal() {
 	go func() {
-		defer close(out)
 		for {
 			select {
 			case <-q.ctx.Done():
-				values := q.dequeueAll()
-				if len(values) == 0 {
-					continue
-				}
-
-				out <- values
+				q.dequeueAll()
+				close(q.out)
 				return
 			case <-q.pushSignal:
-				values := q.dequeueAll()
-				if len(values) == 0 {
-					continue
-				}
-
-				out <- values
+				q.dequeueAll()
+			case <-time.After(q.options.tickerInterval):
+				q.dequeueAll()
 			}
 		}
 	}()
+}
 
-	return out
+func (q *Queue[T]) Receive() chan []T {
+	return q.out
 }
