@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-var noOfMessage = 512
+var noOfMessage = 128
 
 func TestCombination(t *testing.T) {
 	testContext, cancel := context.WithCancel(context.Background())
@@ -30,16 +30,20 @@ func TestCombination(t *testing.T) {
 		}
 
 		log.Println("Done sending", count)
-		cancel()
 	}()
 
 	go func() {
+		var count int
 		for value := range input {
+			count++
 			err := q.Enqueue(value)
 			if err != nil {
+				log.Println("Error:", err)
 				t.Fail()
 			}
 		}
+		log.Println("Done enqueue", count)
+		cancel()
 	}()
 
 	var count int

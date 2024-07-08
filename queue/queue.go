@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -49,29 +50,32 @@ func (q *Queue[T]) Enqueue(value T) error {
 }
 
 func (q *Queue[T]) enqueue(value T) {
-	if q.options.sizeLimit > 0 && len(q.data) > q.options.sizeLimit {
-		q.pushSignal <- true
-	}
-
-	if q.options.memoryLimit > 0 && q.mem+size.Of(value) > q.options.memoryLimit {
-		q.pushSignal <- true
-	}
-
 	q.locker.Lock()
-	defer q.locker.Unlock()
 	q.data = append(q.data, value)
 	q.mem += size.Of(value)
+	q.locker.Unlock()
+
+	if q.options.sizeLimit > 0 && len(q.data) >= q.options.sizeLimit {
+		q.dequeueAll()
+	}
+
+	if q.options.memoryLimit > 0 && q.mem+size.Of(value) >= q.options.memoryLimit {
+		q.dequeueAll()
+	}
 }
 
 func (q *Queue[T]) Close() {
 	close(q.pushSignal)
+	close(q.out)
 }
 
 func (q *Queue[T]) dequeueAll() {
 	q.locker.Lock()
 	defer q.locker.Unlock()
+	log.Println("Dequeue all", len(q.data))
 
 	if len(q.data) == 0 {
+		log.Println("No data to dequeue")
 		return
 	}
 
@@ -88,9 +92,8 @@ func (q *Queue[T]) watchForSignal() {
 			case <-q.ctx.Done():
 				q.dequeueAll()
 				close(q.out)
+				close(q.pushSignal)
 				return
-			case <-q.pushSignal:
-				q.dequeueAll()
 			case <-time.After(q.options.tickerInterval):
 				q.dequeueAll()
 			}
