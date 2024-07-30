@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"runtime"
 	"sync"
 	"time"
 
@@ -18,23 +19,27 @@ type Queue[T any] struct {
 	out        chan []T
 }
 
-func NewQueue[T any](ctx context.Context, options ...QueueOption) Queue[T] {
+func NewQueue[T any](ctx context.Context, options ...QueueOption) *Queue[T] {
 	opts := defaultOptions()
 	for _, option := range options {
 		option.apply(&opts)
 	}
 
-	q := Queue[T]{
+	q := &Queue[T]{
 		ctx:        ctx,
 		data:       []T{},
 		options:    opts,
-		pushSignal: make(chan bool),
+		pushSignal: make(chan bool, 1),
 		locker:     new(sync.RWMutex),
 		mem:        0,
 		out:        make(chan []T),
 	}
 
-	q.watchForSignal()
+	runtime.SetFinalizer(q, func(q *Queue[T]) {
+		q.Close()
+	})
+
+	go q.watchForSignal()
 	return q
 }
 
@@ -49,25 +54,26 @@ func (q *Queue[T]) Enqueue(value T) error {
 }
 
 func (q *Queue[T]) enqueue(value T) {
-	if q.options.sizeLimit > 0 && len(q.data) > q.options.sizeLimit {
-		q.pushSignal <- true
-	}
-
-	if q.options.memoryLimit > 0 && q.mem+size.Of(value) > q.options.memoryLimit {
-		q.pushSignal <- true
-	}
-
 	q.locker.Lock()
-	defer q.locker.Unlock()
 	q.data = append(q.data, value)
 	q.mem += size.Of(value)
+	q.locker.Unlock()
+
+	if q.options.sizeLimit > 0 && len(q.data) >= q.options.sizeLimit {
+		q.pushSignal <- true
+	}
+
+	if q.options.memoryLimit > 0 && q.mem+size.Of(value) >= q.options.memoryLimit {
+		q.pushSignal <- true
+	}
 }
 
 func (q *Queue[T]) Close() {
 	close(q.pushSignal)
+	close(q.out)
 }
 
-func (q *Queue[T]) dequeueAll() {
+func (q *Queue[T]) flush() {
 	q.locker.Lock()
 	defer q.locker.Unlock()
 
@@ -77,25 +83,24 @@ func (q *Queue[T]) dequeueAll() {
 
 	q.out <- q.data
 
-	q.data = []T{}
+	q.data = nil
 	q.mem = 0
 }
 
 func (q *Queue[T]) watchForSignal() {
-	go func() {
-		for {
-			select {
-			case <-q.ctx.Done():
-				q.dequeueAll()
-				close(q.out)
-				return
-			case <-q.pushSignal:
-				q.dequeueAll()
-			case <-time.After(q.options.tickerInterval):
-				q.dequeueAll()
-			}
+	for {
+		select {
+		case <-q.ctx.Done():
+			q.flush()
+			close(q.out)
+			close(q.pushSignal)
+			return
+		case <-q.pushSignal:
+			q.flush()
+		case <-time.After(q.options.tickerInterval):
+			q.flush()
 		}
-	}()
+	}
 }
 
 func (q *Queue[T]) Receive() chan []T {
