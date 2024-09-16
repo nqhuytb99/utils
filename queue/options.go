@@ -9,21 +9,21 @@ type QueueOption interface {
 }
 
 type QueueOptions struct {
-	tickerInterval time.Duration
-	sizeLimit      int
-	memoryLimit    int
+	flushInterval time.Duration
+	sizeLimit     int
+	memoryLimit   int
 }
 
-type tickerIntervalOption struct {
+type flushIntervalOption struct {
 	value time.Duration
 }
 
-func (o *tickerIntervalOption) apply(options *QueueOptions) {
-	options.tickerInterval = o.value
+func (o *flushIntervalOption) apply(options *QueueOptions) {
+	options.flushInterval = o.value
 }
 
-func WithTickerInterval(value time.Duration) QueueOption {
-	return &tickerIntervalOption{value: value}
+func WithFlushInterval(value time.Duration) QueueOption {
+	return &flushIntervalOption{value: value}
 }
 
 type sizeLimitOption struct {
@@ -52,8 +52,8 @@ func WithMemoryLimit(value int) QueueOption {
 
 func defaultOptions() QueueOptions {
 	return QueueOptions{
-		tickerInterval: 10 * time.Second,
-		sizeLimit:      0,
-		memoryLimit:    0,
+		flushInterval: 10 * time.Second,
+		sizeLimit:     0,
+		memoryLimit:   0,
 	}
 }

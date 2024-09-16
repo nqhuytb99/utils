@@ -10,13 +10,13 @@ import (
 )
 
 type Queue[T any] struct {
-	ctx        context.Context
-	data       []T
-	locker     *sync.RWMutex
-	pushSignal chan bool
-	options    QueueOptions
-	mem        int
-	out        chan []T
+	ctx       context.Context
+	data      []T
+	locker    *sync.RWMutex
+	options   QueueOptions
+	mem       int
+	out       chan []T
+	lastFlush time.Time
 }
 
 func NewQueue[T any](ctx context.Context, options ...QueueOption) *Queue[T] {
@@ -26,20 +26,19 @@ func NewQueue[T any](ctx context.Context, options ...QueueOption) *Queue[T] {
 	}
 
 	q := &Queue[T]{
-		ctx:        ctx,
-		data:       []T{},
-		options:    opts,
-		pushSignal: make(chan bool, 1),
-		locker:     new(sync.RWMutex),
-		mem:        0,
-		out:        make(chan []T),
+		ctx:     ctx,
+		data:    []T{},
+		options: opts,
+		locker:  new(sync.RWMutex),
+		mem:     0,
+		out:     make(chan []T),
 	}
 
 	runtime.SetFinalizer(q, func(q *Queue[T]) {
 		q.Close()
 	})
 
-	go q.watchForSignal()
+	go q.watchForFlush()
 	return q
 }
 
@@ -60,16 +59,15 @@ func (q *Queue[T]) enqueue(value T) {
 	q.locker.Unlock()
 
 	if q.options.sizeLimit > 0 && len(q.data) >= q.options.sizeLimit {
-		q.pushSignal <- true
+		q.flush()
 	}
 
 	if q.options.memoryLimit > 0 && q.mem+size.Of(value) >= q.options.memoryLimit {
-		q.pushSignal <- true
+		q.flush()
 	}
 }
 
 func (q *Queue[T]) Close() {
-	close(q.pushSignal)
 	close(q.out)
 }
 
@@ -85,20 +83,12 @@ func (q *Queue[T]) flush() {
 
 	q.data = nil
 	q.mem = 0
+	q.lastFlush = time.Now()
 }
 
-func (q *Queue[T]) watchForSignal() {
+func (q *Queue[T]) watchForFlush() {
 	for {
-		select {
-		case <-q.ctx.Done():
-			q.flush()
-			close(q.out)
-			close(q.pushSignal)
-			return
-		case <-q.pushSignal:
-			q.flush()
-		case <-time.After(q.options.tickerInterval):
-			q.flush()
+		if q.options.flushInterval > 0 && time.Since(q.lastFlush) > q.options.flushInterval {
 		}
 	}
 }
