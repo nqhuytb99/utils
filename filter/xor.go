@@ -47,6 +47,9 @@ func (f *Filter) BuildFilterFromHashes(hashes []uint64) {
 }
 
 func (f *Filter) Contains(key string) bool {
+	if f.xorfilter == nil {
+		return false
+	}
 	return f.xorfilter.Contains(HashText(key))
 }
 
